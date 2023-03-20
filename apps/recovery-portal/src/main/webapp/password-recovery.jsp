@@ -15,6 +15,7 @@
   ~ specific language governing permissions and limitations
   ~ under the License.
   --%>
+<script>console.log("Loading file...")</script>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%@ page import="org.apache.commons.lang.StringUtils" %>
@@ -25,6 +26,8 @@
 <%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.ApiException" %>
 <%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.api.ReCaptchaApi" %>
 <%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.model.ReCaptchaProperties" %>
+<%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.api.HCaptchaApi" %>
+<%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.model.HCaptchaProperties" %>
 <%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.model.User" %>
 <%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.PreferenceRetrievalClient" %>
 <%@ page import="org.wso2.carbon.identity.mgt.endpoint.util.client.PreferenceRetrievalClientException" %>
@@ -38,7 +41,11 @@
 <jsp:directive.include file="tenant-resolve.jsp"/>
 <jsp:directive.include file="includes/layout-resolver.jsp"/>
 
+<script>console.log("At the start now...")</script>
 <%
+    System.out.println(".................");
+    System.out.println("Inside the first java code snippet...");
+    System.out.println(".................");
     boolean error = IdentityManagementEndpointUtil.getBooleanValue(request.getAttribute("error"));
     String errorMsg = IdentityManagementEndpointUtil.getStringValue(request.getAttribute("errorMsg"));
     String username = request.getParameter("username");
@@ -57,8 +64,10 @@
 
         tenantDomain = IdentityManagementServiceUtil.getInstance().getUser(username).getTenantDomain();
     }
-
+    System.out.println(".................");
     ReCaptchaApi reCaptchaApi = new ReCaptchaApi();
+    System.out.println("ReCaptcha Api working....");
+    System.out.println(".................");
     try {
         ReCaptchaProperties reCaptchaProperties = reCaptchaApi.getReCaptcha(tenantDomain, true, "ReCaptcha",
                 "password-recovery");
@@ -76,6 +85,31 @@
         request.getRequestDispatcher("error.jsp").forward(request, response);
         return;
     }
+    System.out.println(".................");
+    // Code for hCaptcha support in UI part
+    HCaptchaApi hCaptchaApi = new HCaptchaApi();
+    System.out.println("HCaptcha Api obj created");
+    System.out.println(".................");
+    try {
+        HCaptchaProperties hCaptchaProperties = hCaptchaApi.getHCaptcha(tenantDomain, true, "HCaptcha",
+                "password-recovery");
+
+        if (hCaptchaProperties.getHCaptchaEnabled()) {
+            Map<String, List<String>> headers = new HashMap<>();
+            headers.put("hCaptcha", Arrays.asList(String.valueOf(true)));
+            headers.put("hCaptchaAPI", Arrays.asList(hCaptchaProperties.getHCaptchaAPI()));
+            headers.put("hCaptchaKey", Arrays.asList(hCaptchaProperties.getHCaptchaKey()));
+            IdentityManagementEndpointUtil.addReCaptchaHeaders(request, headers);
+        }
+    } catch (ApiException e) {
+        System.out.println(".................");
+        System.out.println(e.getMessage());
+        System.out.println(".................");
+        request.setAttribute("error", true);
+        request.setAttribute("errorMsg", e.getMessage());
+        request.getRequestDispatcher("error.jsp").forward(request, response);
+        return;
+    }
 
     boolean isEmailNotificationEnabled = false;
 
@@ -83,11 +117,18 @@
             IdentityManagementEndpointConstants.ConfigConstants.ENABLE_EMAIL_NOTIFICATION));
 
     boolean reCaptchaEnabled = false;
+    boolean hCaptchaEnabled = false;
 
     if (request.getAttribute("reCaptcha") != null &&
             "TRUE".equalsIgnoreCase((String) request.getAttribute("reCaptcha"))) {
         reCaptchaEnabled = true;
     }
+
+    if (request.getAttribute("hCaptcha") != null &&
+            "TRUE".equalsIgnoreCase((String) request.getAttribute("hCaptcha"))) {
+        hCaptchaEnabled = true;
+    }
+
 
     Boolean isQuestionBasedPasswordRecoveryEnabledByTenant;
     Boolean isNotificationBasedPasswordRecoveryEnabledByTenant;
@@ -133,7 +174,14 @@
         if (reCaptchaEnabled) {
             String reCaptchaAPI = CaptchaUtil.reCaptchaAPIURL();
     %>
-    <script src='<%=(reCaptchaAPI)%>'></script>
+    <%
+        }
+    %>
+    <%
+        if (hCaptchaEnabled) {
+            String hCaptchaAPI = CaptchaUtil.hCaptchaAPIURL();
+    %>
+    <script src='<%=(hCaptchaAPI)%>'></script>
     <%
         }
     %>
@@ -280,12 +328,29 @@
                         %>
                         <div class="field">
                             <div class="g-recaptcha"
-                                data-size="invisible"
-                                data-callback="onCompleted"
-                                data-action="passwordRecovery"
-                                data-sitekey="<%=Encode.forHtmlContent(reCaptchaKey)%>"
-                                data-tabindex="-1"
-                            >
+                                    data-size="invisible"
+                                    data-callback="onCompleted"
+                                    data-action="passwordRecovery"
+                                    data-sitekey="<%=Encode.forHtmlContent(reCaptchaKey)%>"
+                                    data-tabindex="-1"
+                                    >
+                            </div>
+                        </div>
+                        <%
+                            }
+                        %>
+                        <%
+                            if (hCaptchaEnabled) {
+                                String hCaptchaKey = CaptchaUtil.hCaptchaSiteKey();
+                        %>
+                        <div class="field">
+                            <div class="h-captcha"
+                                    data-size="invisible"
+                                    data-callback="onCompleted"
+                                    data-action="passwordRecovery"
+                                    data-sitekey="<%=Encode.forHtmlContent(hCaptchaKey)%>"
+                                    data-tabindex="-1"
+                                    >
                             </div>
                         </div>
                         <%
@@ -348,6 +413,18 @@
                 if (!grecaptcha.getResponse()) {
                     e.preventDefault();
                     grecaptcha.execute();
+
+                    return true;
+                }
+                <%
+                    }
+                %>
+                <%
+                    if (hCaptchaEnabled) {
+                %>
+                if (!hcaptcha.getResponse()) {
+                    e.preventDefault();
+                    hcaptcha.execute();
 
                     return true;
                 }
